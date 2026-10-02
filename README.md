@@ -36,16 +36,18 @@ Removed: the `$3F2`/`$3F4` warm-restart test, the autostart slot scan and the fa
 
 ## Images
 
-| Machine | Stock ROM | Socket | Size | Output SHA1 |
-| --- | --- | --- | --- | --- |
-| Enhanced IIe | 342-0303-A (EF) | EF | 8K, 2764 | `8d0d46ead8658ec37eb126d75d435b724fd81bcc` |
-| IIe Platinum | 342-0349-B | single ROM | 16K, 27128 | `e6f097b249d051207c5298462fc6fca952d830c8` |
+Prebuilt images are in `rom/`. Or build your own from a stock ROM dump (see Building); the result is byte-identical.
+
+| File | Machine | Replaces | Socket | Size | SHA1 |
+| --- | --- | --- | --- | --- | --- |
+| `rom/ef_hardreset.bin` | Enhanced IIe | 342-0303-A (EF) | EF | 8K, 2764 | `8d0d46ead8658ec37eb126d75d435b724fd81bcc` |
+| `rom/cf_hardreset.bin` | IIe Platinum | 342-0349-B | single ROM | 16K, 27128 | `e6f097b249d051207c5298462fc6fca952d830c8` |
 
 Stock ROM SHA1s: 342-0303-A `afb09bb96038232dc757d40c0605623cae38088e`, 342-0349-B `b8ea90abe135a0031065e01697c4a3a20d51198b`. The Platinum ROM is byte-identical to 342-0304-A followed by 342-0303-A, so the same patch goes at file offset `$1A62` in the 8K image and `$3A62` in the 16K one.
 
 The unenhanced IIe ROMs are different code and are not supported.
 
-Apple's ROM is not in this repository. You supply your own dump of the stock ROM; the tool checks it and patches it.
+Apart from the 115 patched bytes, the images in `rom/` are Apple's ROM code.
 
 ## Building
 
@@ -74,6 +76,8 @@ python3 tools/apply_patch.py 342-0303-A.bin ef_hardreset.bin
 | `listing/reset_patch.lst` | assembler listing with addresses and bytes |
 | `patch/reset_patch.bin` | the assembled 115 bytes for `$FA62-$FAD4` |
 | `tools/apply_patch.py` | applies the patch to a stock ROM image |
+| `rom/ef_hardreset.bin` | prebuilt 8K image, enhanced IIe EF socket |
+| `rom/cf_hardreset.bin` | prebuilt 16K image, IIe Platinum |
 
 ### Patch bytes
 
@@ -103,7 +107,7 @@ One ROM example, with the stock ROM in a second slot as a fallback on select jum
 
 ```
 onerom program --board fire-28-a \
-  --slot "file=build/ef_hardreset.bin,type=2764,label=Hard Reset" \
+  --slot "file=rom/ef_hardreset.bin,type=2764,label=Hard Reset" \
   --slot "file=342-0303-A.bin,type=2764,label=Stock EF" \
   --verify
 ```
@@ -122,4 +126,4 @@ The [A2RESET](https://github.com/rallepalaveev/A2RESET) card supplies its own ha
 
 ## License
 
-MIT for the files here. Apple's ROM code is Apple's and is not included.
+MIT for the source, patch and tools. The ROM code in `rom/` outside `$FA62-$FAD4` is Apple's.
