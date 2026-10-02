@@ -1,0 +1,84 @@
+ca65 V2.19 - N/A
+Main file   : src/reset_patch.s
+Current file: src/reset_patch.s
+
+000000r 1               ; reset_patch.s - replaces the enhanced IIe EF ROM's RESET/PWRUP block,
+000000r 1               ; $FA62-$FAD4, with: init, banner, "SLOT (1-7)?", one key, boot $Cn00 (0 = Applesoft).
+000000r 1                       .setcpu "65C02"
+000000r 1               
+000000r 1               SETNORM = $FE84
+000000r 1               INIT    = $FB2F
+000000r 1               SETVID  = $FE93
+000000r 1               SETKBD  = $FE89
+000000r 1               GOTOCX  = $FBB4         ; Y = internal-ROM function; 9 = IIe reset housekeeping
+000000r 1               HOME    = $FC58
+000000r 1               COUT    = $FDED
+000000r 1               KBD     = $C000
+000000r 1               KBDSTRB = $C010
+000000r 1               LCROM   = $C082         ; language card: read ROM, write-protect RAM
+000000r 1               CLRAN0  = $C058
+000000r 1               CLRAN1  = $C05A
+000000r 1               CXDESEL = $CFFF         ; any access releases slot $C800 expansion ROMs
+000000r 1               MSLOT   = $07F8         ; $Cn of the slot whose firmware is running
+000000r 1               BOOTPTR = $00           ; $00/$01 = $Cn00, as the autostart scan uses
+000000r 1               BELL    = $FF3A         ; LDA #$87 / JMP COUT
+000000r 1               BASIC   = $E000         ; Applesoft cold start (JMP $F128)
+000000r 1               BANNER  = $FB60         ; stock: JSR HOME, copy $FF0A-$FF12 to $040F-$0417
+000000r 1               
+000000r 1                       .org $FA62
+00FA62  1               RESET:                  ; $FA62, the 6502 reset vector target
+00FA62  1  2C 82 C0             bit LCROM       ; LC RAM out first: ROM readable, RAM write-protected
+00FA65  1  D8                   cld
+00FA66  1  20 84 FE             jsr SETNORM     ; INVFLG = $FF
+00FA69  1  20 2F FB             jsr INIT        ; text mode, full window
+00FA6C  1  20 93 FE             jsr SETVID      ; CSW -> COUT1
+00FA6F  1  20 89 FE             jsr SETKBD      ; KSW -> KEYIN
+00FA72  1  AD 58 C0             lda CLRAN0
+00FA75  1  AD 5A C0             lda CLRAN1
+00FA78  1  A0 09                ldy #$09
+00FA7A  1  20 B4 FB             jsr GOTOCX      ; 80-col off, AN2/AN3 off, Solid-Apple self test,
+00FA7D  1                                       ; Open-Apple memory scramble, slot-3 ROM select
+00FA7D  1  AD FF CF             lda CXDESEL
+00FA80  1  2C 10 C0             bit KBDSTRB     ; discard any key pressed before now
+00FA83  1  20 60 FB             jsr BANNER      ; HOME + "Apple //e"; exits DEY/BNE, so Y = 0
+00FA86  1  B9 91 FA     msgloop: lda msg,y
+00FA89  1  F0 1D                beq getkey
+00FA8B  1  20 ED FD             jsr COUT        ; COUT1 saves/restores Y via YSAV1 ($35)
+00FA8E  1  C8                   iny
+00FA8F  1  80 F5                bra msgloop
+00FA91  1               
+00FA91  1  D3 CC CF D4  msg:    .byte 'S'|$80, 'L'|$80, 'O'|$80, 'T'|$80, ' '|$80, '('|$80
+00FA95  1  A0 A8        
+00FA97  1  B1 AD B7 A9          .byte '1'|$80, '-'|$80, '7'|$80, ')'|$80, '?'|$80, ' '|$80, 0
+00FA9B  1  BF A0 00     
+00FA9E  1               
+00FA9E  1  20 3A FF     badkey: jsr BELL        ; anything but 0-7: beep, drop it, wait again
+00FAA1  1  80 05                bra getkey
+00FAA3  1  4C 00 E0     basic:  jmp BASIC
+00FAA6  1                       .assert * <= $FAA6, error, "RESET part overruns PWRUP entry"
+00FAA6  1                       .res $FAA6 - *, $EA
+00FAA6  1  80 BA        PWRUP:  bra RESET       ; $FAA6: "CALL -1370" and friends land here
+00FAA8  1               
+00FAA8  1  AD 00 C0     getkey: lda KBD
+00FAAB  1  10 FB                bpl getkey
+00FAAD  1  8D 10 C0             sta KBDSTRB
+00FAB0  1  C9 B0                cmp #'0'|$80
+00FAB2  1  90 EA                bcc badkey
+00FAB4  1  C9 B8                cmp #'8'|$80
+00FAB6  1  B0 E6                bcs badkey
+00FAB8  1  48                   pha
+00FAB9  1  20 ED FD             jsr COUT        ; echo the digit, left up for the length of the beep
+00FABC  1  20 3A FF             jsr BELL
+00FABF  1  20 58 FC             jsr HOME
+00FAC2  1  68                   pla             ; not relying on COUT/BELL/HOME to keep A
+00FAC3  1  29 0F                and #$0F        ; '0'..'7' -> 0..7
+00FAC5  1  F0 DC                beq basic
+00FAC7  1  09 C0                ora #$C0
+00FAC9  1  85 01                sta BOOTPTR+1
+00FACB  1  8D F8 07             sta MSLOT
+00FACE  1  64 00                stz BOOTPTR
+00FAD0  1  6C 00 00             jmp (BOOTPTR)
+00FAD3  1               
+00FAD3  1                       .assert * <= $FAD5, error, "patch overruns $FAD4"
+00FAD3  1  EA EA                .res $FAD5 - *, $EA
+00FAD3  1               
