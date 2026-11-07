@@ -3,7 +3,7 @@
 A patched Apple IIe ROM in which every reset is a hard reset. Power-on, Ctrl-Reset, Ctrl-Open-Apple-Reset and any /RESET from a card all land on the same screen:
 
 ```
-SLOT (1-7)?    Apple //e
+SLOT?          Apple //e
 ```
 
 Press a slot number and that slot boots. There is no warm restart through the `$3F2` reset vector, so a program cannot trap Reset or keep the machine from coming back to the prompt.
@@ -14,9 +14,13 @@ It is a static ROM image: no accelerator conflicts (tested with a ZIP CHIP), no 
 
 | Key | Action |
 | --- | --- |
-| `1`-`7` | echo, beep, clear screen, boot the slot (`JMP $Cn00`) |
-| `0` | echo, beep, clear screen, Applesoft cold start (`JMP $E000`) |
+| `1`-`7` | echo, beep, clear screen, boot the slot (`$Cn00`) |
+| `0` | echo, beep, clear screen, Applesoft cold start (`JMP $E000`): a fresh BASIC, also straight after power-on |
 | anything else | beep, ignore, keep waiting |
+
+The slot is entered with `JSR`, so a card whose `$Cn00` code returns lands in an Applesoft warm start (`JMP $E003`) with the program in memory kept. Slot 3 on a IIe is the 80-column firmware, which does exactly that: pressing `3` gives the `]` prompt in 80 columns. Disk and SCSI controllers never return, so they boot as usual. A space is passed in A, because the 80-column firmware prints whatever A holds.
+
+The warm start relies on Applesoft's zero-page state from an earlier cold start (booting DOS 3.3 or ProDOS does one), so after power-on with nothing booted, use `0` rather than `3` to reach BASIC. Either way DOS is left unhooked, as after any reset that skips `$3F2`; with DOS 3.3 resident, `CALL 976` reconnects it.
 
 Ctrl-Solid-Apple-Reset still runs the built-in self test, and Ctrl-Open-Apple-Reset still scrambles memory before the prompt, as on a stock machine.
 
@@ -30,9 +34,9 @@ On reset the patch:
 2. runs the same initialisation as the stock RESET (`SETNORM`, `INIT`, `SETVID`, `SETKBD`, annunciators, the IIe housekeeping call at `$FBB4`, `$CFFF` to release slot expansion ROMs),
 3. discards any key typed before reset,
 4. clears the screen with the stock "Apple //e" banner and prints the prompt,
-5. waits for a key and boots the slot, setting `$00/$01` and `MSLOT` (`$07F8`) as the stock autostart scan does.
+5. waits for a key and boots the slot, setting `$00/$01` and `MSLOT` (`$07F8`) as the stock autostart scan does, and calling it with `JSR` so that a card that returns falls into the Applesoft warm start.
 
-Removed: the `$3F2`/`$3F4` warm-restart test, the autostart slot scan and the fall-through to BASIC when nothing boots (use `0`). Memory is not cleared.
+Removed: the `$3F2`/`$3F4` warm-restart test, the autostart slot scan (a slot is booted only when chosen; an empty slot is not skipped) and the fall-through to BASIC when nothing boots (use `0`). Memory is not cleared.
 
 ## Images
 
@@ -40,8 +44,8 @@ Prebuilt images are in `rom/`. Or build your own from a stock ROM dump (see Buil
 
 | File | Machine | Replaces | Socket | Size | SHA1 |
 | --- | --- | --- | --- | --- | --- |
-| `rom/ef_hardreset.bin` | Enhanced IIe | 342-0303-A (EF) | EF | 8K, 2764 | `8d0d46ead8658ec37eb126d75d435b724fd81bcc` |
-| `rom/cf_hardreset.bin` | IIe Platinum | 342-0349-B | single ROM | 16K, 27128 | `e6f097b249d051207c5298462fc6fca952d830c8` |
+| `rom/ef_hardreset.bin` | Enhanced IIe | 342-0303-A (EF) | EF | 8K, 2764 | `378b0c1330dc034f86cc33aa25ef3d3600953ac0` |
+| `rom/cf_hardreset.bin` | IIe Platinum | 342-0349-B | single ROM | 16K, 27128 | `5c49e7c93d814433ed1c105e524a2f58be529325` |
 
 Stock ROM SHA1s: 342-0303-A `afb09bb96038232dc757d40c0605623cae38088e`, 342-0349-B `b8ea90abe135a0031065e01697c4a3a20d51198b`. The Platinum ROM is byte-identical to 342-0304-A followed by 342-0303-A, so the same patch goes at file offset `$1A62` in the 8K image and `$3A62` in the 16K one.
 
@@ -86,12 +90,12 @@ For entering by hand or patching with a hex editor, at `$FA62-$FAD4`:
 ```
 FA62: 2C 82 C0 D8 20 84 FE 20 2F FB 20 93 FE 20 89 FE
 FA72: AD 58 C0 AD 5A C0 A0 09 20 B4 FB AD FF CF 2C 10
-FA82: C0 20 60 FB B9 91 FA F0 1D 20 ED FD C8 80 F5 D3
-FA92: CC CF D4 A0 A8 B1 AD B7 A9 BF A0 00 20 3A FF 80
-FAA2: 05 4C 00 E0 80 BA AD 00 C0 10 FB 8D 10 C0 C9 B0
-FAB2: 90 EA C9 B8 B0 E6 48 20 ED FD 20 3A FF 20 58 FC
-FAC2: 68 29 0F F0 DC 09 C0 85 01 8D F8 07 64 00 6C 00
-FAD2: 00 EA EA
+FA82: C0 20 60 FB B9 91 FA 10 1D 20 ED FD C8 80 F5 D3
+FA92: CC CF D4 BF 20 3A FF 80 0D A9 A0 20 A3 FA 4C 03
+FAA2: E0 6C 00 00 80 BA AD 00 C0 10 FB 8D 10 C0 C9 B0
+FAB2: 90 E2 C9 B8 B0 DE 48 20 ED FD 20 3A FF 20 58 FC
+FAC2: 68 29 0F F0 0B 09 C0 85 01 8D F8 07 64 00 80 C9
+FAD2: 4C 00 E0
 ```
 
 ## Chips
@@ -114,11 +118,14 @@ onerom program --board fire-28-a \
 
 ## Tested
 
-| Machine | Image | Carrier |
-| --- | --- | --- |
-| Enhanced IIe with ZIP CHIP and A2RESET card | EF | One ROM Fire 28 rev A3 |
-| Enhanced IIe (stock) | EF | One ROM Fire 28 rev A3, AT28C64B |
-| IIe Platinum | 16K | One ROM Fire 28 rev C (earlier revision of the patch, same block and entry points) |
+| Machine | Image | Carrier | Revision |
+| --- | --- | --- | --- |
+| Enhanced IIe | EF | One ROM Fire 28 rev A | this one |
+| Enhanced IIe with ZIP CHIP and A2RESET card | EF | One ROM Fire 28 rev A3 | earlier |
+| Enhanced IIe (stock) | EF | One ROM Fire 28 rev A3, AT28C64B | earlier |
+| IIe Platinum | 16K | One ROM Fire 28 rev C | earlier |
+
+Earlier revisions replace the same block and keep the same entry points.
 
 ## With an A2RESET card
 

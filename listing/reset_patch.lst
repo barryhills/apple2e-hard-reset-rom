@@ -3,7 +3,8 @@ Main file   : src/reset_patch.s
 Current file: src/reset_patch.s
 
 000000r 1               ; reset_patch.s - replaces the enhanced IIe EF ROM's RESET/PWRUP block,
-000000r 1               ; $FA62-$FAD4, with: init, banner, "SLOT (1-7)?", one key, boot $Cn00 (0 = Applesoft).
+000000r 1               ; $FA62-$FAD4, with: init, banner, "SLOT?", one key, boot $Cn00 (0 = Applesoft cold
+000000r 1               ; start; a card that returns lands in an Applesoft warm start).
 000000r 1                       .setcpu "65C02"
 000000r 1               
 000000r 1               SETNORM = $FE84
@@ -23,6 +24,7 @@ Current file: src/reset_patch.s
 000000r 1               BOOTPTR = $00           ; $00/$01 = $Cn00, as the autostart scan uses
 000000r 1               BELL    = $FF3A         ; LDA #$87 / JMP COUT
 000000r 1               BASIC   = $E000         ; Applesoft cold start (JMP $F128)
+000000r 1               WARM    = $E003         ; Applesoft warm start (JMP $D43C), program kept
 000000r 1               BANNER  = $FB60         ; stock: JSR HOME, copy $FF0A-$FF12 to $040F-$0417
 000000r 1               
 000000r 1                       .org $FA62
@@ -42,19 +44,21 @@ Current file: src/reset_patch.s
 00FA80  1  2C 10 C0             bit KBDSTRB     ; discard any key pressed before now
 00FA83  1  20 60 FB             jsr BANNER      ; HOME + "Apple //e"; exits DEY/BNE, so Y = 0
 00FA86  1  B9 91 FA     msgloop: lda msg,y
-00FA89  1  F0 1D                beq getkey
+00FA89  1  10 1D                bpl getkey      ; stops on badkey's JSR opcode ($20, bit 7 clear)
 00FA8B  1  20 ED FD             jsr COUT        ; COUT1 saves/restores Y via YSAV1 ($35)
 00FA8E  1  C8                   iny
 00FA8F  1  80 F5                bra msgloop
 00FA91  1               
-00FA91  1  D3 CC CF D4  msg:    .byte 'S'|$80, 'L'|$80, 'O'|$80, 'T'|$80, ' '|$80, '('|$80
-00FA95  1  A0 A8        
-00FA97  1  B1 AD B7 A9          .byte '1'|$80, '-'|$80, '7'|$80, ')'|$80, '?'|$80, ' '|$80, 0
-00FA9B  1  BF A0 00     
-00FA9E  1               
-00FA9E  1  20 3A FF     badkey: jsr BELL        ; anything but 0-7: beep, drop it, wait again
-00FAA1  1  80 05                bra getkey
-00FAA3  1  4C 00 E0     basic:  jmp BASIC
+00FA91  1  D3 CC CF D4  msg:    .byte 'S'|$80, 'L'|$80, 'O'|$80, 'T'|$80, '?'|$80
+00FA95  1  BF           
+00FA96  1                                       ; no terminator: badkey must follow directly
+00FA96  1               
+00FA96  1  20 3A FF     badkey: jsr BELL        ; anything but 0-7: beep, drop it, wait again
+00FA99  1  80 0D                bra getkey
+00FA9B  1  A9 A0        launch: lda #' '|$80    ; A reaches $Cn00; slot 3 prints it, so make it a space
+00FA9D  1  20 A3 FA             jsr bootjmp     ; no indirect JSR: this pushes the return address
+00FAA0  1  4C 03 E0             jmp WARM        ; a card whose $Cn00 code ends in RTS (80-col slot 3) lands here
+00FAA3  1  6C 00 00     bootjmp: jmp (BOOTPTR)
 00FAA6  1                       .assert * <= $FAA6, error, "RESET part overruns PWRUP entry"
 00FAA6  1                       .res $FAA6 - *, $EA
 00FAA6  1  80 BA        PWRUP:  bra RESET       ; $FAA6: "CALL -1370" and friends land here
@@ -63,22 +67,23 @@ Current file: src/reset_patch.s
 00FAAB  1  10 FB                bpl getkey
 00FAAD  1  8D 10 C0             sta KBDSTRB
 00FAB0  1  C9 B0                cmp #'0'|$80
-00FAB2  1  90 EA                bcc badkey
+00FAB2  1  90 E2                bcc badkey
 00FAB4  1  C9 B8                cmp #'8'|$80
-00FAB6  1  B0 E6                bcs badkey
+00FAB6  1  B0 DE                bcs badkey
 00FAB8  1  48                   pha
 00FAB9  1  20 ED FD             jsr COUT        ; echo the digit, left up for the length of the beep
 00FABC  1  20 3A FF             jsr BELL
 00FABF  1  20 58 FC             jsr HOME
 00FAC2  1  68                   pla             ; not relying on COUT/BELL/HOME to keep A
 00FAC3  1  29 0F                and #$0F        ; '0'..'7' -> 0..7
-00FAC5  1  F0 DC                beq basic
+00FAC5  1  F0 0B                beq cold
 00FAC7  1  09 C0                ora #$C0
 00FAC9  1  85 01                sta BOOTPTR+1
 00FACB  1  8D F8 07             sta MSLOT
 00FACE  1  64 00                stz BOOTPTR
-00FAD0  1  6C 00 00             jmp (BOOTPTR)
-00FAD3  1               
-00FAD3  1                       .assert * <= $FAD5, error, "patch overruns $FAD4"
-00FAD3  1  EA EA                .res $FAD5 - *, $EA
-00FAD3  1               
+00FAD0  1  80 C9                bra launch
+00FAD2  1  4C 00 E0     cold:   jmp BASIC
+00FAD5  1               
+00FAD5  1                       .assert * <= $FAD5, error, "patch overruns $FAD4"
+00FAD5  1                       .res $FAD5 - *, $EA
+00FAD5  1               

@@ -1,5 +1,6 @@
 ; reset_patch.s - replaces the enhanced IIe EF ROM's RESET/PWRUP block,
-; $FA62-$FAD4, with: init, banner, "SLOT (1-7)?", one key, boot $Cn00 (0 = Applesoft).
+; $FA62-$FAD4, with: init, banner, "SLOT?", one key, boot $Cn00 (0 = Applesoft cold
+; start; a card that returns lands in an Applesoft warm start).
         .setcpu "65C02"
 
 SETNORM = $FE84
@@ -19,6 +20,7 @@ MSLOT   = $07F8         ; $Cn of the slot whose firmware is running
 BOOTPTR = $00           ; $00/$01 = $Cn00, as the autostart scan uses
 BELL    = $FF3A         ; LDA #$87 / JMP COUT
 BASIC   = $E000         ; Applesoft cold start (JMP $F128)
+WARM    = $E003         ; Applesoft warm start (JMP $D43C), program kept
 BANNER  = $FB60         ; stock: JSR HOME, copy $FF0A-$FF12 to $040F-$0417
 
         .org $FA62
@@ -38,17 +40,20 @@ RESET:                  ; $FA62, the 6502 reset vector target
         bit KBDSTRB     ; discard any key pressed before now
         jsr BANNER      ; HOME + "Apple //e"; exits DEY/BNE, so Y = 0
 msgloop: lda msg,y
-        beq getkey
+        bpl getkey      ; stops on badkey's JSR opcode ($20, bit 7 clear)
         jsr COUT        ; COUT1 saves/restores Y via YSAV1 ($35)
         iny
         bra msgloop
 
-msg:    .byte 'S'|$80, 'L'|$80, 'O'|$80, 'T'|$80, ' '|$80, '('|$80
-        .byte '1'|$80, '-'|$80, '7'|$80, ')'|$80, '?'|$80, ' '|$80, 0
+msg:    .byte 'S'|$80, 'L'|$80, 'O'|$80, 'T'|$80, '?'|$80
+                        ; no terminator: badkey must follow directly
 
 badkey: jsr BELL        ; anything but 0-7: beep, drop it, wait again
         bra getkey
-basic:  jmp BASIC
+launch: lda #' '|$80    ; A reaches $Cn00; slot 3 prints it, so make it a space
+        jsr bootjmp     ; no indirect JSR: this pushes the return address
+        jmp WARM        ; a card whose $Cn00 code ends in RTS (80-col slot 3) lands here
+bootjmp: jmp (BOOTPTR)
         .assert * <= $FAA6, error, "RESET part overruns PWRUP entry"
         .res $FAA6 - *, $EA
 PWRUP:  bra RESET       ; $FAA6: "CALL -1370" and friends land here
@@ -66,12 +71,13 @@ getkey: lda KBD
         jsr HOME
         pla             ; not relying on COUT/BELL/HOME to keep A
         and #$0F        ; '0'..'7' -> 0..7
-        beq basic
+        beq cold
         ora #$C0
         sta BOOTPTR+1
         sta MSLOT
         stz BOOTPTR
-        jmp (BOOTPTR)
+        bra launch
+cold:   jmp BASIC
 
         .assert * <= $FAD5, error, "patch overruns $FAD4"
         .res $FAD5 - *, $EA

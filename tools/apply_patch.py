@@ -23,12 +23,12 @@ PATCH_LEN = 0x73            # $FA62-$FAD4
 STOCK = {
     "afb09bb96038232dc757d40c0605623cae38088e":
         ("342-0303-A (enhanced IIe EF, 8K)", 0x1A62,
-         "8d0d46ead8658ec37eb126d75d435b724fd81bcc"),
+         "378b0c1330dc034f86cc33aa25ef3d3600953ac0"),
     "b8ea90abe135a0031065e01697c4a3a20d51198b":
         ("342-0349-B (IIe Platinum, 16K)", 0x3A62,
-         "e6f097b249d051207c5298462fc6fca952d830c8"),
+         "5c49e7c93d814433ed1c105e524a2f58be529325"),
 }
-SHIPPED_PATCH_SHA1 = "2365c1f68f4c919647ef29111b5f90415024a4d4"
+SHIPPED_PATCH_SHA1 = "dbc9cabf9d0009b77e4229a9650eef89582395c1"
 
 
 def sha1(b):
